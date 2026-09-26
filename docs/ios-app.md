@@ -153,7 +153,7 @@ xcrun devicectl device copy from --device <DEVICE_ID> \
 
 **Widget state:** after every action the app writes the lock state to
 `Library/Application Support/widgetState.json` in the App Group container and reloads the
-widget; the widget logs each reload (and the state it read) to `widget.log` next to it:
+widget; the widget writes one line per reload (the state it read) to `widget.log` next to it:
 
 ```bash
 xcrun devicectl device copy from --device <DEVICE_ID> \
@@ -181,6 +181,17 @@ writes widget images (light/dark, four states) to the app's `Documents` folder.
 | `ScooterWidgets/` | the widget extension: home-screen widget and the two controls |
 | `tools/make_icon.swift` | renders the app icon (light, dark, tinted): `swift tools/make_icon.swift ScooterLink/Assets.xcassets/AppIcon.appiconset` |
 | `project.yml`, `generate.sh`, `signing.env.example` | project generation and signing configuration |
+
+## Troubleshooting
+
+- **The widget does not change after lock/unlock.** First check `widget.log` (see above):
+  every reload writes one line with the state the widget read. If the log shows the new
+  state but the home screen keeps an old picture, iOS's widget cache is stuck — this can
+  happen after reinstalling development builds many times. Restart the phone.
+- **"login rejected" although the PIN is right:** the cloud rotated the key — fetch it
+  again ([getting-the-key.md](getting-the-key.md)).
+- **The scooter is not found:** it must be on, and no other phone (Mi Home) may be
+  connected to it.
 
 ## Limitations
 

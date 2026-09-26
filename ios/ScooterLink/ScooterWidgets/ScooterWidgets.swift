@@ -34,7 +34,8 @@ struct StatusProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<StatusEntry>) -> Void) {
         // Az app minden művelet után újratölti; éjfél után a „ma / tegnap” felirat miatt újrarajzolunk.
         let state = SharedState.load()
-        SharedState.log("idővonal: zárva=\(state.locked.map { "\($0)" } ?? "?"), "
+        SharedState.log("idővonal [\(context.family), \(Int(context.displaySize.width))×\(Int(context.displaySize.height))]: "
+                        + "zárva=\(state.locked.map { "\($0)" } ?? "?"), "
                         + "frissítve=\(state.updated.map { "\($0)" } ?? "?"), hiba=\(state.lastFailure ?? "nincs")")
         let afterMidnight = Calendar.current.startOfDay(for: .now).addingTimeInterval(24 * 3600 + 60)
         completion(Timeline(entries: [StatusEntry(date: .now, state: state)], policy: .after(afterMidnight)))
