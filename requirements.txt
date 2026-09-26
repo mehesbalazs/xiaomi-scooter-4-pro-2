@@ -1,0 +1,8 @@
+# Python CLI (scooter.py) — BLE and crypto
+bleak>=3.0
+cryptography>=42
+# Xiaomi cloud login (tokens/token_extractor.py, tokens/get_ltmk.py)
+requests
+pycryptodome
+Pillow
+colorama
