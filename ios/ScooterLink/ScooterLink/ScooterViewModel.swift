@@ -21,6 +21,8 @@ final class ScooterViewModel: ObservableObject {
 
     @Published private(set) var pin: String
     @Published private(set) var cloudKey: String
+    /// A megjegyzett (saját) roller — az első sikeres művelet után; a Beállításokban látszik.
+    @Published private(set) var rememberedScooter: ScooterClient.RememberedScooter?
 
     var busy: Bool { running != nil }
     var hasCredentials: Bool { !pin.isEmpty && !cloudKey.isEmpty }
@@ -43,7 +45,8 @@ final class ScooterViewModel: ObservableObject {
             Task { @MainActor in self?.syncFromShared() }
         }
         let info = Bundle.main.infoDictionary
-        trace("[APP] indul — v\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))")
+        trace("[APP] indul — v\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?")), "
+              + "megjegyzett roller: \(rememberedScooter?.name ?? "nincs")")
         #if DEBUG
         applyDemoIfRequested()
         #endif
@@ -57,10 +60,17 @@ final class ScooterViewModel: ObservableObject {
     /// A közös (widget-) állapotból átveszi a zárállapotot, ha az frissebb a sajátunknál —
     /// pl. ha közben egy widgetről zártak / nyitottak.
     func syncFromShared() {
+        rememberedScooter = client.remembered
         let s = SharedState.load()
         guard let l = s.locked, let u = s.updated, u > (lockUpdated ?? .distantPast) else { return }
         locked = l; lockUpdated = u
         saveSnapshot()
+    }
+
+    /// A megjegyzett roller elfelejtése: a következő művelet újra keres (első beállítás).
+    func forgetScooter() {
+        client.forget()
+        rememberedScooter = nil
     }
 
     // MARK: Hitelesítő adatok (Kulcskarika)
@@ -147,6 +157,8 @@ final class ScooterViewModel: ObservableObject {
     /// Szimulátoros képernyőképekhez: `-demo` mintaadatot mutat (a Kulcskarikához nem nyúl).
     private func applyDemoIfRequested() {
         let args = ProcessInfo.processInfo.arguments
+        if args.contains("-forgetScooter") { forgetScooter() }            // első beállítás próbája
+        if args.contains("-rejectOnce") { client.debugRejections = 1 }    // jelöltváltás próbája
         if let t = args.firstIndex(of: "-timing").flatMap({ $0 + 1 < args.count ? args[$0 + 1] : nil }),
            let cfg = Self.parseTiming(t) { client.timing = cfg }        // pl. önteszt adott kézfogás-időzítéssel
         guard args.contains("-demo") else { return }
@@ -156,6 +168,8 @@ final class ScooterViewModel: ObservableObject {
         t.cycles = 23; t.voltage = 40.8; t.temperature = 24; t.batteryTemperature = 22
         t.tripKm = 4.2; t.tripSeconds = 740
         telemetry = t; locked = true; lockUpdated = t.updated
+        client.remembered = .init(id: UUID(), name: "dreame scooter", since: t.updated.addingTimeInterval(-86400))
+        rememberedScooter = client.remembered            // (csak demó / szimulátor)
         if args.contains("-demoBusy") { running = .unlock; step = "Bejelentkezés… (2/3)" }
         if args.contains("-renderWidgets") { WidgetPreviews.render() }
         if args.contains("-demoError") { errorMessage = Self.message(for: ScooterError.noResponse) }

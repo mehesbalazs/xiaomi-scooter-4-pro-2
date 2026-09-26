@@ -44,6 +44,7 @@ final class ScooterClient: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
     // delegate-callbackre váró folytatások (csak a főszálon érjük el őket, lásd onMain)
     private var poweredOn: ((Bool) -> Void)?
     private var scanResult: ((CBPeripheral) -> Void)?
+    private var scanAccept: ((CBPeripheral) -> Bool)?
     private var connectedCont: ((Bool) -> Void)?
     private var discoveredCont: ((Bool) -> Void)?
     private var disconnectedCont: ((Bool) -> Void)?
@@ -73,16 +74,61 @@ final class ScooterClient: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
     }
     var timing = HandshakeTiming()
 
-    /// Az utoljára talált roller iOS-azonosítója (tartósan mentve). Ha ismert, a kapcsolódás
-    /// keresés nélkül indulhat: egy hirdetési ciklus (~0,5 s) megspórolva.
-    private var knownId: UUID? {
-        get { UserDefaults.standard.string(forKey: "scooter.peripheralId").flatMap(UUID.init) }
-        set { UserDefaults.standard.set(newValue?.uuidString, forKey: "scooter.peripheralId") }
+    /// A megjegyzett (saját) roller. Az első SIKERES bejelentkezés után mentődik (a Beállításokban
+    /// látszik); ha van, az app csak ehhez csatlakozik — több ugyanilyen roller közelében is —, és
+    /// közvetlenül, keresés nélkül (egy hirdetési ciklus, ~0,5 s megspórolva).
+    struct RememberedScooter: Codable, Equatable {
+        let id: UUID          // iOS CBPeripheral-azonosító (ezen a telefonon állandó)
+        let name: String
+        let since: Date
+    }
+    private static let rememberedKey = "scooter.remembered.v1"
+
+    var remembered: RememberedScooter? {
+        get {
+            let d = UserDefaults.standard
+            if let data = d.data(forKey: Self.rememberedKey),
+               let r = try? JSONDecoder().decode(RememberedScooter.self, from: data) { return r }
+            // korábbi verzió: csak az azonosítót tárolta — átvesszük megjegyzett rollerként
+            if let s = d.string(forKey: "scooter.peripheralId"), let id = UUID(uuidString: s) {
+                let r = RememberedScooter(id: id, name: "dreame scooter", since: Date())
+                if let data = try? JSONEncoder().encode(r) { d.set(data, forKey: Self.rememberedKey) }
+                d.removeObject(forKey: "scooter.peripheralId")
+                return r
+            }
+            return nil
+        }
+        set {
+            if let r = newValue, let data = try? JSONEncoder().encode(r) {
+                UserDefaults.standard.set(data, forKey: Self.rememberedKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.rememberedKey)
+            }
+        }
+    }
+
+    /// Az éppen csatlakoztatott roller (a sikeres bejelentkezés utáni megjegyzéshez).
+    private(set) var currentId: UUID?
+    private var currentName: String?
+
+    /// Sikeres bejelentkezés után (ScooterService): ha még nincs megjegyzett roller, ez lesz az.
+    func rememberCurrent() {
+        guard remembered == nil, let id = currentId else { return }
+        remembered = RememberedScooter(id: id, name: currentName ?? "roller", since: Date())
+        log("roller megjegyezve: \(currentName ?? "roller")")
+    }
+
+    /// A megjegyzett roller elfelejtése — a következő művelet újra keres (első beállítás).
+    func forget() {
+        remembered = nil
+        log("a megjegyzett roller elfelejtve")
     }
 
     #if DEBUG
     /// Teszthez: ennyi login-kísérlet szimulált átmeneti hibával bukik el (az újrapróbálás igazolására).
     var debugFailures = 0
+    /// Teszthez: ennyi login-kísérletet „utasít el a roller” (a jelöltváltás igazolására).
+    var debugRejections = 0
     #endif
 
     /// Napló-callback (a UI-nak); minden lépést kiír. A konzolra és a tartós naplóba is megy.
@@ -110,8 +156,10 @@ final class ScooterClient: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
     }
 
     // MARK: Kapcsolódás
-    func connect(scanTimeout: TimeInterval = 15) async throws {
+    /// `excluded`: első beállításkor a már elutasító (nem saját) rollerek — ezeket kihagyjuk.
+    func connect(excluding excluded: Set<UUID> = [], scanTimeout: TimeInterval = 15) async throws {
         resetSession()
+        currentId = nil; currentName = nil
         if central.state != .poweredOn {
             log("Bluetooth bekapcsolására várok…")
             let ok: Bool = await onMain(timeout: 5, fallback: false) { finish in
@@ -119,9 +167,10 @@ final class ScooterClient: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
             } cleanup: { self.poweredOn = nil }
             guard ok else { throw ScooterError.bluetoothOff }
         }
+        let mine = remembered
         var target: CBPeripheral?
-        if timing.direct, let id = knownId, let known = central.retrievePeripherals(withIdentifiers: [id]).first {
-            log("közvetlen csatlakozás (ismert roller)…")
+        if timing.direct, let r = mine, let known = central.retrievePeripherals(withIdentifiers: [r.id]).first {
+            log("közvetlen csatlakozás (megjegyzett roller)…")
             if await connectTo(known, timeout: timing.directTimeout) {
                 target = known
             } else {
@@ -132,22 +181,28 @@ final class ScooterClient: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
             }
         }
         if target == nil {
-            log("roller keresése…")
+            log(mine == nil ? "roller keresése…" : "a megjegyzett roller keresése…")
             let found: CBPeripheral? = await onMain(timeout: scanTimeout, fallback: nil) { finish in
+                // megjegyzett rollernél csak az fogadható el; első beállításkor bármelyik t2336,
+                // ami még nem utasította el a kulcsot
+                self.scanAccept = { p in mine.map { $0.id == p.identifier } ?? !excluded.contains(p.identifier) }
                 self.scanResult = { finish($0) }
                 // nil scan + szűrés a didDiscover-ben (a roller a fe95-öt a service DATA-ban hirdeti)
                 self.central.scanForPeripherals(withServices: nil, options: nil)
-            } cleanup: { self.scanResult = nil; self.central.stopScan() }
-            guard let f = found else { log("nincs roller a közelben"); throw ScooterError.notFound }
+            } cleanup: { self.scanResult = nil; self.scanAccept = nil; self.central.stopScan() }
+            guard let f = found else {
+                log(mine == nil ? "nincs (további) roller a közelben" : "a megjegyzett roller nincs a közelben")
+                throw ScooterError.notFound
+            }
             log("csatlakozás…")
             guard await connectTo(f, timeout: 10) else {
                 await cancel(f)
                 throw ScooterError.timeout("csatlakozás")
             }
-            knownId = f.identifier
             target = f
         }
         guard let p = target else { throw ScooterError.notFound }
+        currentId = p.identifier; currentName = p.name
         log("kapcsolódva")
         let discovered: Bool = await onMain(timeout: 8, fallback: false) { finish in
             self.discoveredCont = finish
@@ -273,6 +328,11 @@ final class ScooterClient: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
             debugFailures -= 1
             log("🧪 szimulált login-hiba (teszt)")
             throw ScooterError.loginFailed("szimulált A4-hiba")
+        }
+        if debugRejections > 0 {
+            debugRejections -= 1
+            log("🧪 szimulált elutasítás (teszt)")
+            throw ScooterError.rejected
         }
         #endif
         let (pkg, dmtu) = try await a4()
@@ -451,6 +511,7 @@ final class ScooterClient: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
             log("kihagyva: \(p.name ?? "névtelen") pid=0x\(String(pid, radix: 16))")
             return
         }
+        if let accept = scanAccept, !accept(p) { return }     // nem a megjegyzett / már elutasított
         log("talált roller: \(p.name ?? "névtelen") (rssi \(RSSI))")
         report(p)
     }

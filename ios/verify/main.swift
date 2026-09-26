@@ -74,6 +74,15 @@ check("parancs-státusz≠0: nincs újrapróbálás", "\(res) @\(n)", "commandFa
 check("BT kikapcsolva: nincs újrapróbálás", "\(res) @\(n)", "bluetoothOff @1")
 (res, n) = await retryScenario([ScooterError.missingCredentials])
 check("nincs PIN/kulcs: nincs újrapróbálás", "\(res) @\(n)", "missingCredentials @1")
+print("== roller-jelöltek (első beállítás) ==")
+func nextCand(_ e: Error, remembered: Bool, tried: Int) -> String {
+    "\(Retry.shouldTryNextCandidate(after: e, remembered: remembered, tried: tried, maxCandidates: 5))"
+}
+check("elutasított, még nincs megjegyzett roller → következő", nextCand(ScooterError.rejected, remembered: false, tried: 1), "true")
+check("elutasított, van megjegyzett roller → nem keres tovább", nextCand(ScooterError.rejected, remembered: true, tried: 1), "false")
+check("elutasított, elfogytak a jelöltek → nem keres tovább", nextCand(ScooterError.rejected, remembered: false, tried: 5), "false")
+check("átmeneti hiba → nem jelöltváltás (azt az újrapróbálás kezeli)", nextCand(ScooterError.loginFailed("A4"), remembered: false, tried: 1), "false")
+check("nincs roller → nem jelöltváltás", nextCand(ScooterError.notFound, remembered: false, tried: 1), "false")
 (res, n) = await retryScenario([CancellationError()])
 check("idegen hiba: nincs újrapróbálás", "\(res) @\(n)", "CancellationError() @1")
 

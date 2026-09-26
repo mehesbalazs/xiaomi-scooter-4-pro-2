@@ -78,8 +78,14 @@ Device Management** → your Apple ID → Trust.
 1. **Settings** (gear icon): enter the **scooter PIN** (*Roller PIN*) and the **encrypted
    BLE key** (*Felhőkulcs*). Both are hidden fields (eye icon to reveal) and are stored in
    the Keychain, on this device only.
-2. **Zárás / Nyitás** (lock / unlock) sends only the command — it does not read data.
-3. The round **↻** button on the *Roller adatai* card reads the scooter's data: battery
+2. **First action = setup.** The app scans for t2336 scooters. If one rejects the key (someone
+   else's identical scooter), it is skipped and the next one is tried (up to 5). After the
+   first **successful** login the scooter is remembered and shown in Settings under
+   *Rögzített roller* (name, date, identifier). From then on the app connects only to that
+   scooter — directly, without scanning. *Roller elfelejtése* (forget) makes the next action
+   from the app search again, e.g. for another scooter.
+3. **Zárás / Nyitás** (lock / unlock) sends only the command — it does not read data.
+4. The round **↻** button on the *Roller adatai* card reads the scooter's data: battery
    and estimated range, current trip (distance + time) and odometer, battery health and
    charge cycles, voltage, battery and controller temperature. The last values are kept
    with a timestamp.
@@ -100,8 +106,8 @@ The main screen never scrolls; the lock circle adapts to the available space.
 How it works: a widget button or control runs an App Intent that the system executes **in
 the app's process** (`LiveActivityIntent`; the app is launched in the background if
 needed) — a widget extension cannot drive Bluetooth itself. The app therefore has the
-`bluetooth-central` background mode. In the background iOS does not scan, so the app
-connects directly to the scooter it found last; run one action from the app first.
+`bluetooth-central` background mode. In the background iOS does not scan, so the widget and
+the controls use the remembered scooter; do the first-time setup from the app.
 
 **Security:** lock and unlock require an unlocked phone — from the Lock Screen, Face ID or
 the passcode is requested first.
@@ -138,6 +144,7 @@ xcrun devicectl device process launch --console --terminate-existing \
 | --- | --- |
 | `-selftest` | reads the data, then locks/unlocks with one simulated login failure (exercises the retry) |
 | `-intentTest` | runs the same path as the widget and the controls, and checks the shared widget state |
+| `-forgetScooter`, `-rejectOnce` | forget the remembered scooter / make the next login look rejected — together with `-intentTest` they exercise first-time setup and skipping a scooter that rejects the key |
 | `-bench N -configs "400/600/d,400/800/s" [-pause 0] [-withRetry]` | handshake benchmark: configurations (post-discovery / post-A4 wait in ms; `d` = direct connect, `s` = scan, `d0.05` = direct with 0.05 s fallback) run round-robin; prints success rate, retries and min/median/max per configuration |
 | `-timing 400/600/d` | uses the given timing for the whole run |
 
@@ -197,4 +204,5 @@ writes widget images (light/dark, four states) to the app's `Documents` folder.
 
 - Supports the **t2336** only (MiBeacon product ID `0x403D`).
 - The phone's Bluetooth must be on, and no other phone may be connected to the scooter.
-- Widget and control actions reach only a scooter that the app has found at least once.
+- Widget and control actions reach only the remembered scooter (set up from the app).
+- One scooter per app installation (one PIN, key and remembered scooter).

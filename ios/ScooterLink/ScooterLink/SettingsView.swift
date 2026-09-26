@@ -71,6 +71,27 @@ struct SettingsView: View {
                     }
                 }
 
+                Section {
+                    if let r = vm.rememberedScooter {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(r.name)
+                            Text("Megjegyezve: " + stamp(r.since)).foregroundStyle(.secondary)
+                            Text(r.id.uuidString).font(.caption2.monospaced()).foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                        .padding(.vertical, 2)
+                        Button(role: .destructive) { vm.forgetScooter() } label: {
+                            Label("Roller elfelejtése", systemImage: "xmark.circle").foregroundStyle(.red)
+                        }
+                    } else {
+                        Text("Még nincs megjegyezve").foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Rögzített roller")
+                } footer: {
+                    Text("Az első sikeres művelet után az app megjegyzi a rollered, és utána csak ahhoz csatlakozik — több ugyanilyen roller közelében is. Másik rollerhez felejtsd el: a következő művelet (az appból) újra keres.")
+                }
+
                 if !readableLog.isEmpty {
                     Section {
                         Text(readableLog.joined(separator: "\n"))

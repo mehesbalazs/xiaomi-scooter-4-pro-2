@@ -16,7 +16,7 @@ Get the encrypted BLE key into `secrets/scooter.env` — see
 
 ```
 SCOOTER_PSK_LOCAL=<encrypted BLE key, 64 hex chars>   # required
-SCOOTER_BLE_ADDRESS=                                  # optional, see below
+SCOOTER_BLE_ADDRESS=                                  # filled in automatically, see below
 ```
 
 **Bluetooth permission (macOS):** the first run asks for Bluetooth access for your
@@ -49,10 +49,17 @@ The CLI output is in Hungarian (e.g. `ZÁRVA` = locked, `NYITVA` = unlocked).
 
 ## Finding the scooter
 
-By default the scooter is found by scanning for its MiBeacon product ID (`0x403D`), so
-other Xiaomi devices nearby (scales, lamps, …) are ignored. To skip scanning, set
-`SCOOTER_BLE_ADDRESS` to the address shown by `scan` (on macOS this is a CoreBluetooth
-UUID, on Linux the MAC address).
+The first run scans for t2336 scooters by their MiBeacon product ID (`0x403D`), so other
+Xiaomi devices nearby (scales, lamps, …) are ignored. If several identical scooters are
+around, each one that rejects the key is skipped. After the first **successful** login the
+scooter's address is written to `secrets/scooter.env` as `SCOOTER_BLE_ADDRESS` (on macOS a
+CoreBluetooth UUID, on Linux the MAC address), and later runs connect only to it.
+
+To search again (e.g. for another scooter), add `--rescan` to any command:
+
+```bash
+.venv/bin/python scooter.py status --rescan
+```
 
 ## Debugging
 

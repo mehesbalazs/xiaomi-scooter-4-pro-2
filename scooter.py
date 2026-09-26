@@ -6,13 +6,16 @@ A teljes securitychip protokoll (részletek: README.md):
   vezérlés: titkosított MIoT SPEC csatorna a 0x001a/0x001b-n
 
     ./scooter.py scan            # a közeli Xiaomi-eszközök, a t2336 megjelölve (PIN nem kell)
+    ./scooter.py status --rescan # a rögzített roller helyett újrakeresés (és újra rögzítés)
     ./scooter.py status          # zár állapot + akku% (olvasás)
     ./scooter.py lock
     ./scooter.py unlock
 
 A PIN-t getpass kéri (nem látszik). Az LTMK a secrets/scooter.env-ből
 (SCOOTER_PSK_LOCAL = a felhő-kulcs), a PIN-nel dekódolva. A rollert a MiBeacon
-product ID (0x403D) alapján maga keresi meg; SCOOTER_BLE_ADDRESS-szel fix cím is adható.
+product ID (0x403D) alapján maga keresi meg: ha több ugyanilyen is van a közelben, amelyik
+elutasítja a kulcsot, azt kihagyja. Az első sikeres bejelentkezés után a címet a
+secrets/scooter.env SCOOTER_BLE_ADDRESS sorába írja, és utána csak ahhoz csatlakozik.
 
 t2336-specifikus SPEC opcode: OLVASÁS op=2 (válasz op=3), ÍRÁS op=0 (válasz op=1).
 A 0x001b válasz csak egyetlen aktív BLE-kapcsolatnál jön — futtatás előtt a telefon
@@ -106,20 +109,53 @@ def mibeacon_pid(adv):
     return (sd[2] | (sd[3] << 8)) if sd and len(sd) >= 4 else None
 
 
-async def find_scooter(timeout=15.0):
-    """Az első hirdető t2336 (BLEDevice), vagy None."""
+async def find_scooters(timeout=15.0, collect=3.0):
+    """A közeli t2336-ok (BLEDevice), legerősebb jel elöl: az első után még `collect` mp-ig gyűjt."""
     from bleak import BleakScanner
-    found = asyncio.get_running_loop().create_future()
+    seen = {}
+    first = asyncio.get_running_loop().create_future()
 
     def cb(dev, adv):
-        if mibeacon_pid(adv) == SCOOTER_PID and not found.done():
-            found.set_result(dev)
+        if mibeacon_pid(adv) == SCOOTER_PID:
+            seen[dev.address] = (dev, adv.rssi)
+            if not first.done():
+                first.set_result(True)
 
     async with BleakScanner(cb):
         try:
-            return await asyncio.wait_for(found, timeout)
+            await asyncio.wait_for(first, timeout)
         except asyncio.TimeoutError:
-            return None
+            return []
+        await asyncio.sleep(collect)
+    return [d for d, _ in sorted(seen.values(), key=lambda x: -x[1])]
+
+
+async def first_accepting(candidates, attempt):
+    """Az első jelölt, amelyik elfogadja a kulcsot: (jelölt, attempt eredménye).
+    A LoginRejected-et dobó (idegen) rollert kihagyja; ha mind elutasít, LoginRejected."""
+    for c in candidates:
+        try:
+            return c, await attempt(c)
+        except LoginRejected:
+            print(f"  {getattr(c, 'address', c)}: elutasította a kulcsot — nem a tiéd? következő...")
+    raise LoginRejected("a közeli roller(ek) mind elutasították a bejelentkezést (hibás PIN vagy kulcs?)")
+
+
+def save_env_value(path, key, value):
+    """KEY=value beírása / cseréje egy .env-fájlban (a többi sor érintetlen, jogosultság 600)."""
+    lines = open(path, encoding="utf-8").read().splitlines() if os.path.exists(path) else []
+    out, done = [], False
+    for line in lines:
+        if line.split("=", 1)[0].strip() == key:
+            out.append(f"{key}={value}")
+            done = True
+        else:
+            out.append(line)
+    if not done:
+        out.append(f"{key}={value}")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(out) + "\n")
+    os.chmod(path, 0o600)
 
 
 async def scan(secs=8.0):
@@ -224,6 +260,10 @@ async def a4_handshake(cl, bus):
     raise RuntimeError(f"A4: nem MNG válasz: {b.hex()}")
 
 
+class LoginRejected(RuntimeError):
+    """A roller elutasította a logint (0x22/0x23): hibás PIN / kulcs, vagy nem ez a roller."""
+
+
 async def login(cl, bus, ltmk, crc_order="little"):
     priv = ec.generate_private_key(ec.SECP256R1(), default_backend())
     our_pub = priv.public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)[1:]
@@ -242,7 +282,35 @@ async def login(cl, bus, ltmk, crc_order="little"):
     cfm = await get(bus.q[CONTROL], 8.0)
     if cfm and cfm[0] == CFM_OK:
         return Keys(derived)
-    raise RuntimeError(f"login elutasítva: {cfm.hex() if cfm else 'nincs válasz'}")
+    if cfm and cfm[0] in (CFM_FAIL, 0x23):
+        raise LoginRejected(f"login elutasítva: {cfm.hex()}")
+    raise RuntimeError(f"login sikertelen: {cfm.hex() if cfm else 'nincs válasz'}")
+
+
+async def open_session(target, ltmk, crc_order):
+    """Csatlakozás + értesítések + A4 + login: (kliens, bus, kulcsok). Hibánál bont."""
+    cl = BleakClient(target, timeout=20.0)
+    await cl.connect()
+    print("Csatlakozva.")
+    try:
+        bus = Bus()
+        extra = ["00000017-0000-1000-8000-00805f9b34fb",
+                 "00000018-0000-1000-8000-00805f9b34fb",
+                 "0000001c-0000-1000-8000-00805f9b34fb"]
+        for u in [CONTROL, LOGINCH, SPEC_WRITE, SPEC_NOTIFY] + extra:
+            try:
+                await cl.start_notify(u, bus.cb(u))
+            except Exception as e:
+                print(f"  (notify {u[4:8]} kihagyva: {e})")
+        await asyncio.sleep(0.4)
+        pkgnum, dmtu = await a4_handshake(cl, bus)
+        print(f"A4 OK (maxPkg={pkgnum}, DMTU={dmtu}).")
+        keys = await login(cl, bus, ltmk, crc_order)
+        print("✅ Login OK.")
+        return cl, bus, keys
+    except BaseException:
+        await cl.disconnect()
+        raise
 
 
 # ---- SPEC csatorna (0x001a/0x001b) ----
@@ -449,6 +517,8 @@ async def main():
     ap.add_argument("piid", nargs="?", type=int, help="get/set-hez")
     ap.add_argument("value", nargs="?", help="set-hez (pl. 1 vagy 0)")
     ap.add_argument("--crc", choices=["little", "big"], default="little")
+    ap.add_argument("--rescan", action="store_true",
+                    help="a rögzített roller (SCOOTER_BLE_ADDRESS) helyett újrakeresés és újra rögzítés")
     args = ap.parse_args()
 
     if args.cmd == "scan":
@@ -468,30 +538,19 @@ async def main():
                backend=default_backend()).decryptor()
     ltmk = d.update(ztoken) + d.finalize()
 
-    target = address
-    if not target:
+    if address and not args.rescan:
+        cl, bus, keys = await open_session(address, ltmk, args.crc)
+    else:
+        # első beállítás (vagy --rescan): a közeli t2336-ok közül az, amelyik elfogadja a kulcsot
         print("Roller keresése...")
-        target = await find_scooter()
-        if target is None:
+        candidates = await find_scooters()
+        if not candidates:
             sys.exit("Nem találom a rollert. Kapcsold be, és a telefonos app ne legyen rácsatlakozva.")
-    cl = BleakClient(target, timeout=20.0)
-    await cl.connect()
-    print("Csatlakozva.")
-    bus = Bus()
-    EXTRA = ["00000017-0000-1000-8000-00805f9b34fb",
-             "00000018-0000-1000-8000-00805f9b34fb",
-             "0000001c-0000-1000-8000-00805f9b34fb"]
-    for u in [CONTROL, LOGINCH, SPEC_WRITE, SPEC_NOTIFY] + EXTRA:
-        try:
-            await cl.start_notify(u, bus.cb(u))
-        except Exception as e:
-            print(f"  (notify {u[4:8]} kihagyva: {e})")
-    await asyncio.sleep(0.4)
+        dev, (cl, bus, keys) = await first_accepting(
+            candidates, lambda d: open_session(d, ltmk, args.crc))
+        save_env_value(env_path, "SCOOTER_BLE_ADDRESS", dev.address)
+        print(f"Roller rögzítve: {dev.address} (secrets/scooter.env, SCOOTER_BLE_ADDRESS)")
     try:
-        pkgnum, dmtu = await a4_handshake(cl, bus)
-        print(f"A4 OK (maxPkg={pkgnum}, DMTU={dmtu}).")
-        keys = await login(cl, bus, ltmk, args.crc)
-        print("✅ Login OK.")
         await asyncio.sleep(0.3)
         await mcu_gate(cl, bus)   # 0x001c verzió-olvasás (kapu-hipotézis)
         await asyncio.sleep(0.3)

@@ -35,6 +35,8 @@ Home app and no cloud round-trip.
   - Face ID required from the Lock Screen
 - **Python CLI** for macOS and Linux: status, lock/unlock, any property, property sweep,
   live polling monitor
+- **Your scooter only:** after the first successful login the scooter is remembered (in the
+  app's settings / the CLI's config) — works even with several identical scooters nearby
 - **Retries** with a fresh connection on a weak signal
 - **Documented protocol:** login, transport, opcodes, property map and measured timing
 

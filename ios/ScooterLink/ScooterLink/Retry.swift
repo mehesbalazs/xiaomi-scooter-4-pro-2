@@ -41,4 +41,14 @@ enum Retry {
     }
 
     static func isTransient(_ error: Error) -> Bool { (error as? ScooterError)?.isTransient ?? false }
+
+    /// Első beállításkor (még nincs megjegyzett roller) egy talált roller elutasította a
+    /// bejelentkezést: valószínűleg egy másik, ugyanilyen roller — a következővel próbálkozunk
+    /// (legfeljebb `maxCandidates`-ig). Megjegyzett rollernél az elutasítás hibás PIN-t / kulcsot
+    /// jelent, ott nem keresünk tovább.
+    static func shouldTryNextCandidate(after error: Error, remembered: Bool,
+                                       tried: Int, maxCandidates: Int) -> Bool {
+        guard case ScooterError.rejected? = error as? ScooterError else { return false }
+        return !remembered && tried < maxCandidates
+    }
 }

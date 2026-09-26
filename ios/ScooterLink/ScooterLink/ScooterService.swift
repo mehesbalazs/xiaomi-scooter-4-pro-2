@@ -18,6 +18,8 @@ final class ScooterService {
 
     /// Egy művelet legfeljebb ennyi teljes (csatlakozás + login + parancs) kísérlet.
     static let maxAttempts = 3
+    /// Első beállításkor legfeljebb ennyi közeli, ugyanilyen rollerrel próbálkozunk.
+    static let maxCandidates = 5
     /// Minden művelet után (bármelyik forrásból) — a felület ebből frissül.
     static let stateChanged = Notification.Name("hu.scooterlink.stateChanged")
 
@@ -61,10 +63,30 @@ final class ScooterService {
             lastAttempts = attempt
             if attempt > 1 { client.log("↻ újrapróbálás \(attempt)/\(attemptsLimit)") }
             do {
-                progress?("Kapcsolódás…" + tag)
-                try await client.connect()
-                progress?("Bejelentkezés…" + tag)
-                try await client.login(pin: pin, encryptedKeyHex: key)
+                // Első beállításkor (nincs megjegyzett roller) egy közeli, ugyanilyen, de idegen
+                // roller elutasítja a kulcsot — kihagyjuk, és a következővel próbálkozunk.
+                var excluded = Set<UUID>()
+                while true {
+                    progress?("Kapcsolódás…" + tag)
+                    do {
+                        try await client.connect(excluding: excluded, scanTimeout: excluded.isEmpty ? 15 : 6)
+                    } catch ScooterError.notFound where !excluded.isEmpty {
+                        throw ScooterError.rejected    // mind elutasított: hibás PIN / kulcs, vagy a sajátod nincs itt
+                    }
+                    progress?("Bejelentkezés…" + tag)
+                    do {
+                        try await client.login(pin: pin, encryptedKeyHex: key)
+                        break
+                    } catch {
+                        guard Retry.shouldTryNextCandidate(after: error, remembered: client.remembered != nil,
+                                                           tried: excluded.count + 1, maxCandidates: Self.maxCandidates),
+                              let id = client.currentId else { throw error }
+                        client.log("a roller elutasította a kulcsot — nem a tiéd? a következő keresése")
+                        excluded.insert(id)
+                        await client.disconnect()
+                    }
+                }
+                client.rememberCurrent()      // csak SIKERES bejelentkezés után
                 progress?(Self.workingText(action) + tag)
                 let outcome: ScooterOutcome
                 switch action {
