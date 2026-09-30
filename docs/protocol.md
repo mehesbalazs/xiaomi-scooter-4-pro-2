@@ -153,7 +153,7 @@ scale 0.01.**
 | 5 | ENERGY_RECOVERY | u8 | regeneration level |
 | 6 | TOTAL_MILEAGE | float ×0.01 | km (odometer) |
 | 7 | IS_RIDING | u8 | |
-| 8 | RIDING_TIME | float | s (current trip) |
+| 8 | RIDING_TIME | float | **minutes** (current trip; the client scales ×60 to seconds) |
 | 9 | HIGHEST_SPEED | float ×0.01 | km/h |
 | 10 | ASR_IS_ON | bool | |
 | 11 | REMAINING_MILEAGE_ALGORITHM | u8 | |
