@@ -46,6 +46,7 @@ check("REMAINING_MILEAGE 6050->60.5", num(Props.decode(hex("0010bd45"), Props.al
 check("BATTERY 0x64->100", num(Props.decode(hex("64"), Props.all[Props.key(1,2)]!)), "100.00")
 check("TEMP i8 0x17->23", num(Props.decode(hex("17"), Props.all[Props.key(3,2)]!)), "23.00")
 check("FIRMWARE str", txt(Props.decode(hex("322e352e335f303031352e30303130"), Props.all[Props.key(4,5)]!)), "2.5.3_0015.0010")
+check("RIDING_TIME 14 perc->840 s", num(Props.decode(hex("00006041"), Props.all[Props.key(2,8)]!)), "840.00")
 
 print("== újrapróbálás ==")
 /// Lefuttatja a Retry-t egy előre megadott hibasorozattal; visszaadja (eredmény, kísérletszám).

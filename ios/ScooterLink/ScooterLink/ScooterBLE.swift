@@ -466,6 +466,16 @@ final class ScooterClient: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
         guard status == 0 else { throw ScooterError.commandFailed(status) }
     }
 
+    /// Tempomat (CRUISE_IS_ON, 2/3) bekapcsolása nyitás után. Best-effort: a vezérlő minden
+    /// kikapcsoláskor visszaállítja „ki”-re (régió/hardver), ezért a beállítás menetenként él;
+    /// ha nem sikerül, a nyitás attól még érvényes — itt sosem dobunk hibát.
+    func enableCruise() async {
+        let pt = await specRequestRetry(SpecFrame.set(siid: 2, piid: 3, typeCode: 0, value: Data([1])))
+        let status = pt.map { SpecParse.setStatus($0) } ?? -1
+        log(status == 0 ? "tempomat bekapcsolva (nyitás után)"
+                        : "tempomat beállítás nem sikerült (státusz \(status))")
+    }
+
     /// A műszerfal adatai egy menetben (a property-térkép: ScooterProtocol.swift / README).
     func readTelemetry() async throws -> Telemetry {
         var t = Telemetry(updated: Date())

@@ -21,6 +21,10 @@ final class ScooterViewModel: ObservableObject {
 
     @Published private(set) var pin: String
     @Published private(set) var cloudKey: String
+    /// Nyitáskor kapcsolja-e be a tempomatot (a vezérlő kikapcsoláskor elfelejti, ezért menetenként).
+    @Published var cruiseOnUnlock: Bool {
+        didSet { UserDefaults.standard.set(cruiseOnUnlock, forKey: ScooterService.cruiseOnUnlockKey) }
+    }
     /// A megjegyzett (saját) roller — az első sikeres művelet után; a Beállításokban látszik.
     @Published private(set) var rememberedScooter: ScooterClient.RememberedScooter?
 
@@ -34,6 +38,7 @@ final class ScooterViewModel: ObservableObject {
     init() {
         pin = Keychain.get("pin") ?? ""
         cloudKey = Keychain.get("cloudkey") ?? ""
+        cruiseOnUnlock = UserDefaults.standard.bool(forKey: ScooterService.cruiseOnUnlockKey)
         restoreSnapshot()
         syncFromShared()
         client.onLog = { [weak self] line in

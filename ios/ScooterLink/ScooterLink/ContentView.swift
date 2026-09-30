@@ -442,12 +442,15 @@ struct StatTile: View {
             .font(.caption)
             .lineLimit(1)
             Spacer(minLength: 8)
+            // az értékek a csempe alján; a szimpla csempékben is fenntartjuk a kis felirat
+            // helyét (láthatatlanul), így minden csempe egyforma magas, és az értékek a sorok
+            // között is azonos magasságban ülnek (pl. „135” a „51,7 V”-tal egy vonalban)
             HStack(alignment: .lastTextBaseline, spacing: 20) {
                 ForEach(values.indices, id: \.self) { i in
                     VStack(spacing: 1) {
-                        if let label = values[i].label {
-                            Text(label).font(.caption2).foregroundStyle(.secondary)
-                        }
+                        Text(values[i].label ?? " ")
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .opacity(values[i].label == nil ? 0 : 1)
                         Text(values[i].value ?? "—")
                             .font(.headline).monospacedDigit()
                             .lineLimit(1).minimumScaleFactor(0.7)

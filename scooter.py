@@ -86,7 +86,7 @@ PROPS = {
     (2, 5): ("ENERGY_RECOVERY", "u8", 1, ""),
     (2, 6): ("TOTAL_MILEAGE", "f", 0.01, "km"),
     (2, 7): ("IS_RIDING", "u8", 1, ""),
-    (2, 8): ("RIDING_TIME", "f", 1, "s"),
+    (2, 8): ("RIDING_TIME", "f", 60, "s"),   # a roller PERCben küldi -> x60 = másodperc
     (2, 9): ("HIGHEST_SPEED", "f", 0.01, "km/h"),
     (3, 2): ("BATTERY_TEMPERATURE", "i8", 1, "°C"),
     (3, 3): ("SCOOTER_TEMPERATURE", "i8", 1, "°C"),

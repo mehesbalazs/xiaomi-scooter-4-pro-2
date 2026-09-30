@@ -72,6 +72,17 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle(isOn: $vm.cruiseOnUnlock) {
+                        Label("Tempomat nyitáskor", systemImage: "gauge.with.dots.needle.67percent")
+                    }
+                    .tint(.green)
+                } header: {
+                    Text("Menet")
+                } footer: {
+                    Text("Ha be van kapcsolva, minden nyitáskor bekapcsolja a tempomatot is. A roller a kikapcsoláskor elfelejti, ezért menetenként kell — ez automatikusan megteszi. Régiótól függően a tempomat nem mindenhol engedélyezett a közúton.")
+                }
+
+                Section {
                     if let r = vm.rememberedScooter {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(r.name)

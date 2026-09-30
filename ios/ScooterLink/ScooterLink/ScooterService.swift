@@ -20,6 +20,9 @@ final class ScooterService {
     static let maxAttempts = 3
     /// Első beállításkor legfeljebb ennyi közeli, ugyanilyen rollerrel próbálkozunk.
     static let maxCandidates = 5
+    /// Beállítás: nyitáskor kapcsolja-e be a tempomatot (a Beállításokban állítható csúszka).
+    static let cruiseOnUnlockKey = "settings.cruiseOnUnlock.v1"
+    static var cruiseOnUnlock: Bool { UserDefaults.standard.bool(forKey: cruiseOnUnlockKey) }
     /// Minden művelet után (bármelyik forrásból) — a felület ebből frissül.
     static let stateChanged = Notification.Name("hu.scooterlink.stateChanged")
 
@@ -91,7 +94,12 @@ final class ScooterService {
                 let outcome: ScooterOutcome
                 switch action {
                 case .lock: try await client.setLocked(true); outcome = .lockSet(true)
-                case .unlock: try await client.setLocked(false); outcome = .lockSet(false)
+                case .unlock:
+                    try await client.setLocked(false)
+                    // nyitás után, ha a Beállításokban be van kapcsolva, a tempomatot is
+                    // visszakapcsoljuk (ugyanebben a menetben, extra login nélkül)
+                    if Self.cruiseOnUnlock { await client.enableCruise() }
+                    outcome = .lockSet(false)
                 case .refresh: outcome = .telemetry(try await client.readTelemetry())
                 }
                 await client.disconnect()

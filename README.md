@@ -33,6 +33,7 @@ Home app and no cloud round-trip.
   - controls for Control Center, the Lock Screen and the Action button
   - Shortcuts actions
   - Face ID required from the Lock Screen
+  - optional cruise control on unlock (re-applied each ride, since the controller resets it)
 - **Python CLI** for macOS and Linux: status, lock/unlock, any property, property sweep,
   live polling monitor
 - **Your scooter only:** after the first successful login the scooter is remembered (in the

@@ -84,8 +84,13 @@ Device Management** → your Apple ID → Trust.
    *Rögzített roller* (name, date, identifier). From then on the app connects only to that
    scooter — directly, without scanning. *Roller elfelejtése* (forget) makes the next action
    from the app search again, e.g. for another scooter.
-3. **Zárás / Nyitás** (lock / unlock) sends only the command — it does not read data.
-4. The round **↻** button on the *Roller adatai* card reads the scooter's data: battery
+3. **Cruise control on unlock** (Settings → *Menet* → *Tempomat nyitáskor*, off by default):
+   when on, every unlock also turns cruise control back on. The controller forgets this
+   setting on every power-off (it is region/hardware enforced), so it only lasts for the
+   session — enabling it on each unlock keeps it on for the ride. If the write fails the
+   unlock still counts. Cruise control is not legal on public roads in every country.
+4. **Zárás / Nyitás** (lock / unlock) sends only the command — it does not read data.
+5. The round **↻** button on the *Roller adatai* card reads the scooter's data: battery
    and estimated range, current trip (distance + time) and odometer, battery health and
    charge cycles, voltage, battery and controller temperature. The last values are kept
    with a timestamp.

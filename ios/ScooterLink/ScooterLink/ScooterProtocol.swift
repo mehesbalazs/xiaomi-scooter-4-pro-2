@@ -119,7 +119,7 @@ enum Props {
         key(2, 5): PropDef("ENERGY_RECOVERY", .u8, 1, ""),
         key(2, 6): PropDef("TOTAL_MILEAGE", .f, 0.01, "km"),
         key(2, 7): PropDef("IS_RIDING", .u8, 1, ""),
-        key(2, 8): PropDef("RIDING_TIME", .f, 1, "s"),
+        key(2, 8): PropDef("RIDING_TIME", .f, 60, "s"),   // a roller PERCben küldi → ×60 = másodperc
         key(2, 9): PropDef("HIGHEST_SPEED", .f, 0.01, "km/h"),
         key(3, 2): PropDef("BATTERY_TEMPERATURE", .i8, 1, "°C"),
         key(3, 3): PropDef("SCOOTER_TEMPERATURE", .i8, 1, "°C"),
