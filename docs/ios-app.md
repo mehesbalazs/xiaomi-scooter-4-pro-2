@@ -138,7 +138,8 @@ bash ios/verify/run.sh
 ```
 
 **On the phone, with the real scooter** (Debug build, started from the Mac). Every test
-re-applies the *current* lock state, so nothing changes physically:
+first reads the lock state from the scooter and re-applies exactly that, so nothing changes
+physically; if the read fails, no command is sent:
 
 ```bash
 xcrun devicectl device process launch --console --terminate-existing \
@@ -148,7 +149,7 @@ xcrun devicectl device process launch --console --terminate-existing \
 | Launch argument | What it does |
 | --- | --- |
 | `-selftest` | reads the data, then locks/unlocks with one simulated login failure (exercises the retry) |
-| `-intentTest` | runs the same path as the widget and the controls, and checks the shared widget state |
+| `-intentTest` | reads the lock state, then runs the same path as the widget and the controls, and checks the shared widget state |
 | `-forgetScooter`, `-rejectOnce` | forget the remembered scooter / make the next login look rejected — together with `-intentTest` they exercise first-time setup and skipping a scooter that rejects the key |
 | `-bench N -configs "400/600/d,400/800/s" [-pause 0] [-withRetry]` | handshake benchmark: configurations (post-discovery / post-A4 wait in ms; `d` = direct connect, `s` = scan, `d0.05` = direct with 0.05 s fallback) run round-robin; prints success rate, retries and min/median/max per configuration |
 | `-timing 400/600/d` | uses the given timing for the whole run |

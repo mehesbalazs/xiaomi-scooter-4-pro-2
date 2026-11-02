@@ -181,21 +181,31 @@ final class ScooterViewModel: ObservableObject {
         if args.contains("-demoEmpty") { telemetry = nil; locked = nil; lockUpdated = nil; pin = ""; cloudKey = "" }
     }
 
+    /// A tesztekhez: a roller MOST kiolvasott zárállapota. A mentett `locked` elavult lehet (pl.
+    /// közben Mi Home-ból zártak), és azt újraküldve a teszt fizikailag zárna / nyitna — ezért nil,
+    /// ha az olvasás nem sikerült vagy nem adott zárállapotot (ilyenkor a teszt parancsot sem küld).
+    private func readLockState() async -> Bool? {
+        let started = Date()
+        await run(.refresh)
+        guard errorMessage == nil, let t = telemetry, t.updated >= started else { return nil }
+        return t.locked
+    }
+
     /// Eszközön futó önteszt (`-selftest`, devicectl-lel indítva): telemetria, majd a JELENLEGI
     /// zárállapot újra-beállítása (fizikailag nem változik semmi) egy szimulált login-hibával —
     /// ez az újrapróbálást igazolja valódi BLE-n.
     func runSelfTestIfRequested() async {
         guard ProcessInfo.processInfo.arguments.contains("-selftest") else { return }
         trace("[TEST] önteszt indul")
-        await run(.refresh)
+        let current = await readLockState()
         let t = telemetry
-        trace("[TEST] telemetria: \(errorMessage ?? "OK") | zárva=\(locked.map { "\($0)" } ?? "?") "
+        trace("[TEST] telemetria: \(errorMessage ?? "OK") | zárva=\(current.map { "\($0)" } ?? "?") "
               + "akku=\(t?.battery.map { "\($0)%" } ?? "?") hatótáv=\(t?.rangeKm.map { "\($0)" } ?? "?") "
               + "össz=\(t?.totalKm.map { "\($0)" } ?? "?") soh=\(t?.soh.map { "\($0)" } ?? "?") "
               + "ciklus=\(t?.cycles.map { "\($0)" } ?? "?") fesz=\(t?.voltage.map { "\($0)" } ?? "?") "
               + "hő=\(t?.temperature.map { "\($0)" } ?? "?") akku-hő=\(t?.batteryTemperature.map { "\($0)" } ?? "?") "
               + "út=\(t?.tripKm.map { "\($0)" } ?? "?") km/\(t?.tripSeconds.map { "\($0)" } ?? "?") s")
-        guard errorMessage == nil, let l = locked else { trace("[TEST] FAIL: nincs zárállapot"); return }
+        guard let l = current else { trace("[TEST] FAIL: nincs friss zárállapot"); return }
         client.debugFailures = 1
         await run(l ? .lock : .unlock)
         trace("[TEST] \(l ? "zárás" : "nyitás") (azonos állapot) szimulált hibával: \(errorMessage ?? "OK")")
@@ -203,11 +213,11 @@ final class ScooterViewModel: ObservableObject {
     }
 
     /// A widget-intent útvonalának próbája (`-intentTest`): ugyanazt a kezelőt hívja, amit a
-    /// widget-gomb / vezérlő — a JELENLEGI zárállapotot állítja be újra (fizikailag nem változik).
+    /// widget-gomb / vezérlő — a roller előbb kiolvasott, JELENLEGI zárállapotát állítja be újra
+    /// (fizikailag nem változik). Ha az olvasás nem sikerül, parancsot sem küld.
     func runIntentTestIfRequested() async {
         guard ProcessInfo.processInfo.arguments.contains("-intentTest") else { return }
-        let before = SharedState.load()
-        guard let l = locked ?? before.locked else { trace("[TEST] intent: FAIL, nincs ismert zárállapot"); return }
+        guard let l = await readLockState() else { trace("[TEST] intent: FAIL, nincs friss zárállapot"); return }
         trace("[TEST] intent: \(l ? "zárás" : "nyitás") (azonos állapot) az IntentBridge-en át")
         do {
             try await IntentBridge.run(lock: l)
@@ -250,8 +260,7 @@ final class ScooterViewModel: ObservableObject {
         trace("[BENCH] \(n) kör, konfigurációk: \(configs.map(\.label).joined(separator: ", ")), "
               + "szünet: \(pause) s, kísérlet-korlát: \(service.attemptsLimit)")
         client.timing = original
-        await run(.refresh)
-        guard errorMessage == nil, let l = locked else { trace("[BENCH] FAIL: nincs zárállapot"); return }
+        guard let l = await readLockState() else { trace("[BENCH] FAIL: nincs friss zárállapot"); return }
         var times = [[Double]](repeating: [], count: configs.count)
         var fails = [Int](repeating: 0, count: configs.count), retries = fails
         for k in 0..<n {
